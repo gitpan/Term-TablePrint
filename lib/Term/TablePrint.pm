@@ -4,7 +4,7 @@ use warnings;
 use strict;
 use 5.10.1;
 
-our $VERSION = '0.001_01';
+our $VERSION = '0.001_02';
 use Exporter 'import';
 our @EXPORT_OK = qw( print_table );
 
@@ -407,13 +407,13 @@ Term::TablePrint - Print a table on the terminal.
 
 =head1 VERSION
 
-Version 0.001_01
+Version 0.001_02
 
 =cut
 
 =head1 SYNOPSIS
 
-    use Term::Choose::Table qw( print_table );
+    use Term::TablePrint qw( print_table );
 
     my $table = [ [ 'id', 'name' ],
                   [    1, 'Ruth' ],
@@ -455,8 +455,8 @@ If the terminal is too narrow to print the table, the columns are adjusted to th
 If the option "table_expand" is enabled and the highlighted row is selected, each column of that row is output in its
 one line preceded by the column name. This might be useful if the columns were cut due to the too low terminal breadth.
 
-Since C<print_table> uses the C<columns> method for L<Unicode::GCString> to get the string length it should cope with
-the different kind of unicode characters.
+To get a proper output, C<print_table> uses the C<columns> method from L<Unicode::GCString> to calculate the string
+length.
 
 =head1 SUBROUTINES
 
@@ -464,13 +464,11 @@ the different kind of unicode characters.
 
     print_table( $array_ref, [ \%options ] )
 
-As the first argument print_table is a reference to an array of arrays.
+The first argument must be a reference to an array of arrays. The first array of the arrays are the column names. The
+following arrays are the table rows where the elements of these arrays are the field values.
 
-print_table expects in the first array of the arrays the column names. The following arrays are the table rows where the
-elements of these arrays are the field values.
-
-As a second and optional argument it can be passed a reference to a hash which holds the options as pairs of option-name
-and option-value.
+As a second and optional argument it can be passed a reference to a hash which holds the options as pairs of
+"option-name" and "option-value".
 
 =head1 USAGE
 
@@ -480,7 +478,7 @@ and option-value.
 
 =item *
 
-the C<ArrowDown> keys (or C<j>) to move down and  C<ArrowUp> keys (or C<k>) to move up.
+the C<ArrowDown> key (or the C<j> key) to move down and  C<ArrowUp> key (or the C<k> key) to move up.
 
 =item *
 
@@ -493,15 +491,17 @@ row of the table.
 
 =item *
 
-the C<Enter/Return> key to close the table or to print the highlighted row if "expand" is enabled.
+the C<Enter/Return> key to close the table or to print the highlighted row if "table_expand" is enabled.
 
 =back
 
-With the option table_expand disabled:
+With the option "table_expand" disabled:
 
-- Pressing ENTER closes the table.
+- Pressing ENTER jumps to the head of the table.
 
-With the option table_expand enabled:
+- Selecting the head of the table closes the table.
+
+With the option "table_expand" enabled:
 
 - If one selects a row twice in succession, the pointer jumps to the head of the table.
 
@@ -548,13 +548,13 @@ Default: 20_000
 
 =head3 table_expand
 
-Expand set to 1 enables printing the chosen table row by pressing the Enter key.
+"table_expand" set to 1 enables printing the chosen table row by pressing the Enter key.
 
 Default: 1
 
 =head3 mouse
 
-Set the I<mouse mode> (see L<Term::Choose/OPTIONS/mouse>).
+Set the "mouse" mode (see L<Term::Choose/OPTIONS/mouse>).
 
 Default: 0
 
@@ -570,11 +570,11 @@ Default: 0
 
 =head1 REQUIREMENTS
 
+See L<Term::Choose/REQUIREMENTS>
+
 =head2 Perl version
 
 Requires Perl version 5.10.1 or greater.
-
-See also L<Term::Choose/REQUIREMENTS>
 
 =head1 SUPPORT
 
