@@ -1,0 +1,34 @@
+---
+abstract: unknown
+author:
+  - 'Matthaeus Kiem <cuer2s@gmail.com>'
+build_requires:
+  Test::More: 0
+configure_requires:
+  ExtUtils::MakeMaker: 0
+dynamic_config: 1
+generated_by: 'ExtUtils::MakeMaker version 6.88, CPAN::Meta::Converter version 2.120921'
+license: perl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: Term-TablePrint
+no_index:
+  directory:
+    - t
+    - inc
+requires:
+  Carp: 0
+  Exporter: 0
+  List::Util: 0
+  Scalar::Util: 0
+  Term::Choose: 1.075
+  Term::ProgressBar: 0
+  Term::Size::Any: 0
+  Text::LineFold: 0
+  Unicode::GCString: 0
+  constant: 0
+  perl: 5.010001
+  strict: 0
+  warnings: 0
+version: 0.001_01
