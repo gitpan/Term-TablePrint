@@ -1,6 +1,11 @@
 Revision history for Term::TablePrint
 
 
+0.002_01   2014-03-02
+        - Added OO style.
+        - Code refactoring.
+        - Update documentation.
+
 0.001_02   2014-03-02
         - Bugfix documentation.
 
