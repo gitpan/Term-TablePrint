@@ -4,7 +4,7 @@ use warnings;
 use strict;
 use 5.10.1;
 
-our $VERSION = '0.002_01';
+our $VERSION = '0.003';
 use Exporter 'import';
 our @EXPORT_OK = qw( print_table );
 
@@ -23,12 +23,10 @@ no warnings 'utf8';
 use constant CLEAR_SCREEN   => "\e[1;1H\e[0J";
 
 sub new {
-    return bless {}, shift if @_ == 1;
-    return bless $_[1], $_[0] if eval { $_[1]->{db_browser_mode} };
+    #return bless {}, $_[0] if @_ == 1;
     my ( $class, $opt ) = @_;
-    my $arg = scalar( @_ ) - 1;
-    croak "new: called with $arg arguments - 0 or 1 arguments expected." if $arg > 1;
-    croak "new: The (optional) argument is not a HASH reference." if ref $opt ne 'HASH';
+    croak "new: called with " . @_ - 1 . " arguments - 0 or 1 arguments expected." if @_ > 2;
+    croak "new: The (optional) argument is not a HASH reference." if defined $opt && ref $opt ne 'HASH';
     my $self = bless {}, $class;
     $self->__validate_options( $opt );
     return $self;
@@ -37,27 +35,43 @@ sub new {
 sub __validate_options {
     my ( $self, $opt ) = @_;
     return if ! defined $opt;
-    for my $key ( qw( progress max_rows min_col_width tab_width ) ) { # choose_columns
-        next if ! defined $opt->{$key};
-        croak "print_table: '$opt->{$key}' is not a valid value for option '$key'." if $opt->{$key} !~ /^\d+\z/;
-        $self->{$key} = $opt->{$key};
+    if ( $opt->{db_browser_mode} ) {
+        %$self = ( %$self, %$opt );
+        return;
     }
-    for my $key ( qw( table_expand binary_filter ) ) { #  header_row
+    my $valid = {
+        progress_bar    => qr/^[0-9]+\z/,
+        max_rows        => qr/^[0-9]+\z/,
+        min_col_width   => qr/^[0-9]+\z/,
+        tab_width       => qr/^[0-9]+\z/,
+        table_expand    => qr/^[01]\z/,
+        binary_filter   => qr/^[01]\z/,
+        #header_row     => qr/^[01]\z/,
+        #choose_columns => qr/^[01]\z/,
+        mouse           => qr/^[01234]\z/,
+        binary_string   => '',
+        undef           => '',
+        #thsd_sep       => '',
+    };
+
+    for my $key ( keys %$opt ) {
+        croak "print_table: '$key' is not a valid option name." if ! exists $valid->{$key};
         next if ! defined $opt->{$key};
-        croak "print_table: '$opt->{$key}' is not a valid value for option '$key'." if $opt->{$key} !~ /^[01]\z/;
-        $self->{$key} = $opt->{$key};
-    }
-    for my $key ( qw( mouse ) ) {
-        next if ! defined $opt->{$key};
-        croak "print_table: '$opt->{$key}' is not a valid value for option '$key'." if $opt->{$key} !~ /^[01234]\z/;
-        $self->{$key} = $opt->{$key};
+        if ( $valid->{$key} eq '' ) {
+            $self->{$key} = $opt->{$key};
+        }
+        else {
+            croak "print_table: '$opt->{$key}' is not a valid value for option '$key'." if $opt->{$key} !~ $valid->{$key};
+            $self->{$key} = $opt->{$key};
+        }
     }
 }
 
+
 sub __set_defaults {
     my ( $self ) = @_;
-    $self->{progress_bar} = 20000 if ! exists $self->{progress_bar};
-    $self->{max_rows}     = 50000 if ! exists $self->{max_rows};
+    $self->{progress_bar}   //= 20000;
+    $self->{max_rows}       //= 50000;
     $self->{tab_width}      //= 2;
     $self->{min_col_width}  //= 30;
     $self->{table_expand}   //= 1;
@@ -66,7 +80,6 @@ sub __set_defaults {
     $self->{mouse}          //= 0;
     $self->{binary_string}  //= 'BNRY';
     #$self->{header_row}     //= 1;
-    #$self->{choose_columns} //= 0;
     $self->{thsd_sep} = ',';
 }
 
@@ -77,13 +90,14 @@ sub print_table {
     }
     my ( $self, $a_ref, $opt ) = @_;
     if ( ! $self->{db_browser_mode} ) {
-        my $arg = scalar( @_ ) - 1;
-        croak "print_table: called with $arg arguments - 1 or 2 arguments expected." if $arg < 1 || $arg > 2;
-        croak "print_table: Required an ARRAY reference as the first argument."      if ref $a_ref  ne 'ARRAY';
-        croak "print_table: The (optional) second argument is not a HASH reference." if defined $opt && ref $opt ne 'HASH';
-        $self->{backup_opt} = { map{ $_ => $self->{$_} } keys %$opt } if defined $opt;
-        $self->__validate_options( $opt );
-        $self->__set_defaults();
+        my $argc = scalar( @_ ) - 1;
+        croak "print_table: called with $argc arguments - 1 or 2 arguments expected." if $argc < 1 || $argc > 2;
+        croak "print_table: Required an ARRAY reference as the first argument."       if ref $a_ref  ne 'ARRAY';
+        if ( defined $opt ) {
+            croak "print_table: The (optional) second argument is not a HASH reference."  if ref $opt ne 'HASH';
+            $self->{backup_opt} = { map{ $_ => $self->{$_} } keys %$opt } if defined $opt;
+            $self->__validate_options( $opt );
+        }
         #if ( $self->{choose_columns} ) {
         #    my @i = choose( $a_ref->[0], { prompt => 'Choose: ', index => 1 } );
         #    for my $i ( 0 .. $#$a_ref ) {
@@ -91,9 +105,10 @@ sub print_table {
         #    }
         #}
     }
+    $self->__set_defaults();
     my $gcs_bnry = Unicode::GCString->new( $self->{binary_string} );
     $self->{binary_length} = $gcs_bnry->columns;
-    if ( defined $self->{progress_bar} ) {
+    if ( $self->{progress_bar} ) {
         say 'Computing: ...';
         if ( @$a_ref * @{$a_ref->[0]} > $self->{progress_bar} ) {
             $self->{show_progress} = 1;
@@ -446,11 +461,11 @@ __END__
 
 =head1 NAME
 
-Term::TablePrint - Print a table on the terminal.
+Term::TablePrint - Print a table to the terminal.
 
 =head1 VERSION
 
-Version 0.002_01
+Version 0.003
 
 =cut
 
@@ -475,26 +490,39 @@ Version 0.002_01
 
 =head1 DESCRIPTION
 
-Print a table to the terminal.
+C<print_table> prints a table to C<STDOUT> or to C<STDERR> if C<STDOUT> is redirected.
 
-C<print_table> provides a cursor. The row on which the cursor is located is highlighted.
+C<print_table> provides a cursor which highlights the row on which the cursor is located.
 
 The user can scroll through the table with the cursor up/down keys - see L<USAGE>.
 
-If the table has more rows than the terminal, the table is divided up on several sides automatically.
+If the table has more rows than the terminal, the table is divided up on as many pages as needed automatically.
 
-If the cursor reaches the end of a side, the next page is shown automatically (until the last site is reached).
+If the cursor reaches the end of a page, the next page is shown automatically (until the last page is reached).
 
-Also if the cursor reaches the topmost line, the previous side is shown automatically if it is not already the first
-site.
+Also if the cursor reaches the topmost line, the previous page is shown automatically if it is not already the first
+one.
 
-If the terminal is too narrow to print the table, the columns are adjusted to the available breadth automatically.
+If the terminal is too narrow to print the table, the columns are adjusted to the available width automatically.
 
 If the option "table_expand" is enabled and the highlighted row is selected, each column of that row is output in its
-one line preceded by the column name. This might be useful if the columns were cut due to the too low terminal breadth.
+one line preceded by the column name. This might be useful if the columns were cut due to the too low terminal width.
 
 To get a proper output, C<print_table> uses the C<columns> method from L<Unicode::GCString> to calculate the string
 length.
+
+The array elements are processed with the following substitutions:
+
+    s/^\p{Space}+//;
+    s/\p{Space}+\z//;
+    s/\p{Space}+/ /g;
+
+In addition, characters of the Unicode property "Other" are removed:
+
+    s/\p{C}//g;
+
+The elements in a column are right-justified if one or more elements of that column do not look like a number, else they
+are left-justified.
 
 =head1 METHODES
 
@@ -552,13 +580,13 @@ row of the table.
 
 =item *
 
-the C<Enter/Return> key to close the table or to print the highlighted row if "table_expand" is enabled.
+the C<Enter/Return> key to close the table or to print the highlighted row if C<table_expand> is enabled.
 
 =back
 
 With the option "table_expand" disabled:
 
-- Pressing ENTER jumps to the head of the table.
+- Pressing C<Enter/Return> jumps to the head of the table.
 
 - Selecting the head of the table closes the table.
 
@@ -580,9 +608,10 @@ Set the number of spaces between columns.
 
 Default: 2
 
-=head3 colwidth
+=head3 min_col_width
 
-Set the width the columns should have at least when printed.
+Set the width the columns should have at least when printed. The columns which are below or equal the C<min_col_width> are
+only trimmed if it is still required to lower the row width despite all columns have trimmed to C<min_col_width>.
 
 Default: 30
 
@@ -590,13 +619,13 @@ Default: 30
 
 Set the string that will be shown on the screen instead of an undefined field.
 
-Default: '' (empty string)
+Default: "" (empty string)
 
 =head3 max_rows
 
 Set the maximum number of printed table rows.
 
-To disable the automatic limit set I<max rows> to C<undef> (--).
+To disable the automatic limit set C<max rows> to 0.
 
 Default: 50_000
 
@@ -609,13 +638,13 @@ Default: 20_000
 
 =head3 table_expand
 
-"table_expand" set to 1 enables printing the chosen table row by pressing the Enter key.
+C<table_expand> set to 1 enables printing the chosen table row by pressing the C<ENTER> key.
 
 Default: 1
 
 =head3 mouse
 
-Set the "mouse" mode (see L<Term::Choose/OPTIONS/mouse>).
+Set the C<mouse> mode (see option "mouse" in L<Term::Choose/OPTIONS>).
 
 Default: 0
 
@@ -631,11 +660,21 @@ Default: 0
 
 =head1 REQUIREMENTS
 
-See L<Term::Choose/REQUIREMENTS>
-
 =head2 Perl version
 
 Requires Perl version 5.10.1 or greater.
+
+=head2 Decoded strings
+
+C<print_table> expects decoded strings.
+
+=head2 encoding layer for STDOUT
+
+For a correct output it is required to set an encoding layer for STDOUT matching the terminal's character set.
+
+=head2 Monospaced font
+
+It is required a terminal that uses a monospaced font which supports the printed characters.
 
 =head1 SUPPORT
 
