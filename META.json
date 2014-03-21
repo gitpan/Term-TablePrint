@@ -36,12 +36,11 @@
             "Exporter" : "0",
             "List::Util" : "0",
             "Scalar::Util" : "0",
-            "Term::Choose" : "1.075",
+            "Term::Choose" : "1.105",
+            "Term::Choose::Util" : "0.003",
             "Term::ProgressBar" : "0",
-            "Term::Size::Any" : "0",
             "Text::LineFold" : "0",
             "Unicode::GCString" : "0",
-            "constant" : "0",
             "perl" : "5.010001",
             "strict" : "0",
             "warnings" : "0"
@@ -49,5 +48,5 @@
       }
    },
    "release_status" : "stable",
-   "version" : "0.003"
+   "version" : "0.004"
 }

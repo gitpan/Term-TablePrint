@@ -4,65 +4,73 @@ use warnings;
 use strict;
 use 5.10.1;
 
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 use Exporter 'import';
 our @EXPORT_OK = qw( print_table );
 
-use Carp          qw( croak );
+use Carp          qw( carp croak );
 use List::Util    qw( sum );
 use Scalar::Util  qw( looks_like_number );
 
 use Term::Choose       qw( choose );
+use Term::Choose::Util qw( term_size insert_sep unicode_sprintf );
 use Term::ProgressBar;
-use Term::Size::Any    qw( chars );
 use Text::LineFold;
 use Unicode::GCString;
 
 no warnings 'utf8';
 
-use constant CLEAR_SCREEN   => "\e[1;1H\e[0J";
+sub CLEAR_SCREEN () { "\e[1;1H\e[0J" }
 
 sub new {
-    #return bless {}, $_[0] if @_ == 1;
-    my ( $class, $opt ) = @_;
-    croak "new: called with " . @_ - 1 . " arguments - 0 or 1 arguments expected." if @_ > 2;
-    croak "new: The (optional) argument is not a HASH reference." if defined $opt && ref $opt ne 'HASH';
+    my $class = shift;
+    croak "new: called with " . @_ . " arguments - 0 or 1 arguments expected." if @_ > 1;
+    my ( $opt ) = @_;
     my $self = bless {}, $class;
-    $self->__validate_options( $opt );
+    if ( defined $opt ) {
+        croak "new: The (optional) argument is not a HASH reference." if ref $opt ne 'HASH';
+        $self->__validate_options( $opt );
+    }
     return $self;
 }
 
 sub __validate_options {
     my ( $self, $opt ) = @_;
-    return if ! defined $opt;
     if ( $opt->{db_browser_mode} ) {
         %$self = ( %$self, %$opt );
         return;
     }
     my $valid = {
-        progress_bar    => qr/^[0-9]+\z/,
-        max_rows        => qr/^[0-9]+\z/,
-        min_col_width   => qr/^[0-9]+\z/,
-        tab_width       => qr/^[0-9]+\z/,
-        table_expand    => qr/^[01]\z/,
-        binary_filter   => qr/^[01]\z/,
-        #header_row     => qr/^[01]\z/,
-        #choose_columns => qr/^[01]\z/,
-        mouse           => qr/^[01234]\z/,
+        progress_bar    => '[ 0-9 ]+',
+        max_rows        => '[ 0-9 ]+',
+        min_col_width   => '[ 0-9 ]+',
+        tab_width       => '[ 0-9 ]+',
+        table_expand    => '[ 0 1 ]',
+        binary_filter   => '[ 0 1 ]',
+        header_row      => '[ 0 1 ]',
+        choose_columns  => '[ 0 1 2 ]', # ###
+        mouse           => '[ 0 1 2 3 4 ]',
         binary_string   => '',
         undef           => '',
         #thsd_sep       => '',
+        #no_col         => '',
     };
 
     for my $key ( keys %$opt ) {
-        croak "print_table: '$key' is not a valid option name." if ! exists $valid->{$key};
+        if ( ! exists $valid->{$key} ) {
+            carp "print_table: '$key' is not a valid option name.";
+            choose( [ 'Press ENTER to continue' ], { prompt => '' } );
+            next;
+        }
         next if ! defined $opt->{$key};
         if ( $valid->{$key} eq '' ) {
             $self->{$key} = $opt->{$key};
         }
-        else {
-            croak "print_table: '$opt->{$key}' is not a valid value for option '$key'." if $opt->{$key} !~ $valid->{$key};
+        elsif ( $opt->{$key} =~ /^$valid->{$key}\z/x ) {
             $self->{$key} = $opt->{$key};
+        }
+        else {
+            croak "print_table: '$opt->{$key}' is not a valid value for option '$key'.";
         }
     }
 }
@@ -79,8 +87,66 @@ sub __set_defaults {
     $self->{undef}          //= '';
     $self->{mouse}          //= 0;
     $self->{binary_string}  //= 'BNRY';
-    #$self->{header_row}     //= 1;
+    $self->{choose_columns} //= 0;
+    $self->{header_row}     //= 1;
     $self->{thsd_sep} = ',';
+    $self->{no_col}   = 'col';
+}
+
+
+sub __choose_columns {
+    my ( $self, $avail_cols ) = @_;
+    my $col_idxs = [];
+    my $ok = '-ok-';
+    my @pre = ( $ok );
+    my $init_prompt = 'Columns: ';
+    my $s_tab = length $init_prompt;
+
+    while ( 1 ) {
+        my @choosen_cols = @$col_idxs ? map( $avail_cols->[$_], @$col_idxs ) : '*';
+        my $prompt = $init_prompt . join ', ', @choosen_cols;
+        my $choices = [ @pre, @$avail_cols ];
+        # Choose
+        my @idx = choose(
+            $choices,
+            { prompt => $prompt, lf => [ 0, $s_tab ], clear_screen => 1,
+              no_spacebar => [ 0 .. $#pre ], index => 1, mouse => $self->{mouse} }
+        );
+        if ( ! @idx || ! defined $choices->[$idx[0]] ) {
+            if ( @$col_idxs ) {
+                $col_idxs = [];
+                next;
+            }
+            else {
+                return;
+            }
+        }
+        elsif ( $choices->[$idx[0]] eq $ok ) {
+            shift @idx;
+            push @$col_idxs, map { $_ -= @pre; $_ } @idx;
+            return $col_idxs;
+        }
+        else {
+            push @$col_idxs, map { $_ -= @pre; $_ } @idx;
+        }
+    }
+}
+
+
+sub __choose_columns_simple {
+    my ( $self, $avail_cols ) = @_;
+    my $all = '-*-';
+    my @pre = ( $all );
+    my $choices = [ @pre, @$avail_cols ];
+    my @idx = choose(
+        $choices,
+        { prompt => 'Choose: ', no_spacebar => [ 0 .. $#pre ], index => 1, mouse => $self->{mouse} }
+    );
+    return if ! @idx;
+    if ( $choices->[$idx[0]] eq $all ) {
+        return [];
+    }
+    return [ map { $_ -= @pre; $_ } @idx ];
 }
 
 
@@ -88,24 +154,44 @@ sub print_table {
     if ( ref $_[0] ne 'Term::TablePrint' ) {
         return Term::TablePrint->new( $_[1] )->print_table( $_[0] );
     }
-    my ( $self, $a_ref, $opt ) = @_;
-    if ( ! $self->{db_browser_mode} ) {
-        my $argc = scalar( @_ ) - 1;
-        croak "print_table: called with $argc arguments - 1 or 2 arguments expected." if $argc < 1 || $argc > 2;
-        croak "print_table: Required an ARRAY reference as the first argument."       if ref $a_ref  ne 'ARRAY';
+    my $self = shift;
+    my ( $table_ref, $opt ) = @_;
+    my  $a_ref;
+    if ( $self->{db_browser_mode} ) {
+        $self->__set_defaults();
+        $a_ref = $table_ref;
+    }
+    else {
+        croak "print_table: called with " . @_ . " arguments - 1 or 2 arguments expected." if @_ < 1 || @_ > 2;
+        croak "print_table: Required an ARRAY reference as the first argument."            if ref $table_ref  ne 'ARRAY';
         if ( defined $opt ) {
-            croak "print_table: The (optional) second argument is not a HASH reference."  if ref $opt ne 'HASH';
+            croak "print_table: The (optional) second argument is not a HASH reference."   if ref $opt ne 'HASH';
             $self->{backup_opt} = { map{ $_ => $self->{$_} } keys %$opt } if defined $opt;
             $self->__validate_options( $opt );
         }
-        #if ( $self->{choose_columns} ) {
-        #    my @i = choose( $a_ref->[0], { prompt => 'Choose: ', index => 1 } );
-        #    for my $i ( 0 .. $#$a_ref ) {
-        #        $a_ref->[$i] = [ @{$a_ref->[$i]}[sort @i] ];
-        #    }
-        #}
+        $self->__set_defaults();
+        if ( ! $self->{header_row} ) {
+            unshift @$table_ref, [ map { $_ . '_' . $self->{no_col} } 1 .. @{$table_ref->[0]} ];
+        }
+        my $last_row_idx = $self->{max_rows} && $self->{max_rows} < @$table_ref ? $self->{max_rows} : $#$table_ref;
+        my @copy = ();
+        if ( $self->{choose_columns}  ) {
+            my $col_idxs;
+            $col_idxs = $self->__choose_columns_simple( $table_ref->[0] ) if $self->{choose_columns} == 1;
+            $col_idxs = $self->__choose_columns( $table_ref->[0] )        if $self->{choose_columns} == 2;
+            return if ! defined $col_idxs;
+            if ( @$col_idxs ) {
+                @copy = map { [ @{$table_ref->[$_]}[@$col_idxs] ] } 0 .. $last_row_idx;
+            }
+        }
+        if ( @copy ) {
+            $a_ref = \@copy;
+        }
+        else {
+            $a_ref = $table_ref;
+            $#$a_ref = $last_row_idx;
+        }
     }
-    $self->__set_defaults();
     my $gcs_bnry = Unicode::GCString->new( $self->{binary_string} );
     $self->{binary_length} = $gcs_bnry->columns;
     if ( $self->{progress_bar} ) {
@@ -127,29 +213,30 @@ sub print_table {
 
 sub __inner_print_tbl {
     my ( $self, $a_ref ) = @_;
-    my ( $term_width ) = _term_size();
+    my ( $term_width ) = term_size();
     my $width_cols = $self->__calc_avail_width( $a_ref, $term_width );
     return if ! $width_cols;
     my ( $list, $len ) = $self->__trunk_col_to_avail_width( $a_ref, $width_cols );
-    if ( $self->{max_rows} && @$list > $self->{max_rows} ) {
-        my $reached_limit = 'REACHED LIMIT "MAX_ROWS": ' . _insert_sep( $self->{max_rows}, $self->{thsd_sep} );
+    if ( $self->{max_rows} && @$list - 1 >= $self->{max_rows} ) {
+        my $reached_limit = 'REACHED LIMIT "MAX_ROWS": ' . insert_sep( $self->{max_rows}, $self->{thsd_sep} );
         my $gcs = Unicode::GCString->new( $reached_limit );
         if ( $gcs->columns > $term_width ) {
-            $reached_limit = _unicode_sprintf( $term_width, 'REACHED LIMIT', 0 );
+            $reached_limit = unicode_sprintf( 'REACHED LIMIT', $term_width, 0 );
         }
         push @$list, $reached_limit;
     }
     my $old_row = 0;
-    my ( $width ) = _term_size();
+    my ( $width ) = term_size();
     while ( 1 ) {
-        if ( ( _term_size() )[0] != $width ) {
-            ( $width ) = _term_size();
+        if ( ( term_size() )[0] != $width ) {
+            ( $width ) = term_size();
             $self->__inner_print_tbl( $a_ref );
             return;
         }
         my $row = choose(
             $list,
-            { prompt => '', index => 1, default => $old_row, ll => $len, layout => 3, clear_screen => 1, mouse => $self->{mouse} }
+            { prompt => '', index => 1, default => $old_row, ll => $len, layout => 3,
+              clear_screen => 1, mouse => $self->{mouse} }
         );
         return if ! defined $row;
         return if $row == 0;
@@ -172,14 +259,13 @@ sub __inner_print_tbl {
 
 
 sub __single_row {
-    my ( $self, $a_ref, $row, $length_key ) = @_;
-    my ( $term_width ) = _term_size();
-    $length_key = int( $term_width / 100 * 33 ) if $length_key > int( $term_width / 100 * 33 );
+    my ( $self, $a_ref, $row, $len_key ) = @_;
+    my ( $term_width ) = term_size();
+    $len_key = int( $term_width / 100 * 33 ) if $len_key > int( $term_width / 100 * 33 );
     my $separator = ' : ';
-    my $gcs = Unicode::GCString->new( $separator );
-    my $length_sep = $gcs->columns;
-    #$length_key = length( scalar @{$a_ref->[0]} ) if ! $self->{header_row};
-    my $col_max = $term_width - ( $length_key + $length_sep + 1 );
+    my $gcs_sep = Unicode::GCString->new( $separator );
+    my $len_sep = $gcs_sep->columns;
+    my $col_max = $term_width - ( $len_key + $len_sep + 1 );
     my $line_fold = Text::LineFold->new(
         Charset=> 'utf8',
         OutputCharset => '_UNICODE_',
@@ -190,15 +276,14 @@ sub __single_row {
     for my $col ( 0 .. $#{$a_ref->[0]} ) {
         push @{$row_data}, ' ';
         my $key = $a_ref->[0][$col];
-        #$key = $col + 1 if ! $self->{header_row};
         my $sep = $separator;
         if ( ! defined $a_ref->[$row][$col] || $a_ref->[$row][$col] eq '' ) {
-            push @{$row_data}, sprintf "%*.*s%*s%s", $length_key, $length_key, $key, $length_sep, $sep, '';
+            push @{$row_data}, sprintf "%*.*s%*s%s", $len_key, $len_key, $key, $len_sep, $sep, '';
         }
         else {
             my $text = $line_fold->fold( $a_ref->[$row][$col], 'PLAIN' );
             for my $line ( split /\R+/, $text ) {
-                push @{$row_data}, sprintf "%*.*s%*s%s", $length_key, $length_key, $key, $length_sep, $sep, $line;
+                push @{$row_data}, sprintf "%*.*s%*s%s", $len_key, $len_key, $key, $len_sep, $sep, $line;
                 $key = '' if $key;
                 $sep = '' if $sep;
             }
@@ -213,9 +298,7 @@ sub __calc_col_width {
     my $binray_regexp = qr/[\x00-\x08\x0B-\x0C\x0E-\x1F]/;
     $self->{longest_col_name} = 0;
     my $normal_row = 0;
-    #$normal_row = 1 if ! $self->{header_row};
     $self->{width_cols} = [ ( 1 ) x @{$a_ref->[0]} ];
-    #$self->{width_head} = [ ( 1 ) x @{$a_ref->[0]} ] if ! $self->{header_row};
     my @col_idx = ( 0 .. $#{$a_ref->[0]} );
     for my $row ( @$a_ref ) {
         for my $i ( @col_idx ) {
@@ -248,6 +331,31 @@ sub __calc_col_width {
                 $normal_row = 1 if $i == $#$row;
             }
         }
+    }
+}
+
+sub __handle_reference {
+    my ( $self, $ref ) = @_;
+    if ( ref $ref eq 'ARRAY' ) {
+        return 'ref: [' . join( ',', map { '"' . $_ . '"' } @$ref ) . ']';
+    }
+    elsif ( ref $ref eq 'SCALAR' ) {
+        return 'ref: \\' . $$ref;
+    }
+    elsif ( ref $ref eq 'HASH' ) {
+        return 'ref: {' . join( ',', map { $_ . '=>"' . $ref->{$_} . '"' } keys %$ref ) . '}';
+    }
+    elsif ( ref $ref eq 'Regexp' ) {
+        return 'ref: qr/' . $ref . '/';
+    }
+    elsif ( ref $ref eq 'VSTRING' ) {
+        return 'ref: \v' . join '.', unpack 'C*', $$ref;
+    }
+    elsif ( ref $ref eq 'GLOB' ) {
+        return 'ref: \\' . $$ref;
+    }
+    else {
+        return 'ref: ' . ref( $ref );
     }
 }
 
@@ -331,6 +439,14 @@ sub __calc_avail_width {
     return $width_cols;
 }
 
+sub _minus_x_percent {
+    my ( $value, $percent ) = @_;
+    my $new = int( $value - ( $value / 100 * $percent ) );
+    return $new > 0 ? $new : 1;
+}
+
+
+
 
 sub __trunk_col_to_avail_width {
     my ( $self, $a_ref, $width_cols ) = @_;
@@ -347,13 +463,12 @@ sub __trunk_col_to_avail_width {
             remove => 1 } );                  #
         $progress->minor( 0 );                #
     }
-    #unshift @$a_ref, [ map { '=' x $width_cols->[$_] } 0 .. $#$width_cols ] if ! $self->{header_row};
     my $list;
     my $tab = ' ' x $self->{tab_width};
     for my $row ( @$a_ref ) {
         my $str = '';
         for my $i ( 0 .. $#$width_cols ) {
-            $str .= _unicode_sprintf( $width_cols->[$i], $row->[$i], $self->{not_a_number}[$i] ? 0 : 1 );
+            $str .= unicode_sprintf( $row->[$i], $width_cols->[$i], $self->{not_a_number}[$i] ? 0 : 1 );
             $str .= $tab if $i != $#$width_cols;
         }
         push @$list, $str;
@@ -372,83 +487,6 @@ sub __trunk_col_to_avail_width {
 }
 
 
-sub __handle_reference {
-    my ( $self, $ref ) = @_;
-    if ( ref $ref eq 'ARRAY' ) {
-        return 'ref: [' . join( ',', map { '"' . $_ . '"' } @$ref ) . ']';
-    }
-    elsif ( ref $ref eq 'SCALAR' ) {
-        return 'ref: \\' . $$ref;
-    }
-    elsif ( ref $ref eq 'HASH' ) {
-        return 'ref: {' . join( ',', map { $_ . '=>"' . $ref->{$_} . '"' } keys %$ref ) . '}';
-    }
-    elsif ( ref $ref eq 'Regexp' ) {
-        return 'ref: qr/' . $ref . '/';
-    }
-    elsif ( ref $ref eq 'VSTRING' ) {
-        return 'ref: \v' . join '.', unpack 'C*', $$ref;
-    }
-    elsif ( ref $ref eq 'GLOB' ) {
-        return 'ref: \\' . $$ref;
-    }
-    else {
-        return 'ref: ' . ref( $ref );
-    }
-}
-
-
-
-sub _minus_x_percent {
-    my ( $value, $percent ) = @_;
-    my $new = int( $value - ( $value / 100 * $percent ) );
-    return $new > 0 ? $new : 1;
-}
-
-
-sub _term_size {
-    my ( $width, $heigth ) = chars();
-    return $width - 1, $heigth if $^O eq 'MSWin32';
-    return $width, $heigth;
-}
-
-
-sub _insert_sep {
-    my ( $number, $separator ) = @_;
-    return if ! defined $number;
-    return $number if ! $separator;
-    $number =~ s/(\d)(?=(?:\d{3})+\b)/$1$separator/g;
-    return $number;
-}
-
-
-sub _unicode_sprintf {
-    my ( $avail_width, $unicode, $right_justify ) = @_;
-    my $gcs = Unicode::GCString->new( $unicode );
-    my $colwidth = $gcs->columns;
-    if ( $colwidth > $avail_width ) {
-        my $pos = $gcs->pos;
-        $gcs->pos( 0 );
-        my $cols = 0;
-        my $gc;
-        while ( defined( $gc = $gcs->next ) ) {
-            if ( $avail_width < ( $cols += $gc->columns ) ) {
-                my $ret = $gcs->substr( 0, $gcs->pos - 1 );
-                $gcs->pos( $pos );
-                return $ret->as_string;
-            }
-        }
-    }
-    elsif ( $colwidth < $avail_width ) {
-        if ( $right_justify ) {
-            $unicode = " " x ( $avail_width - $colwidth ) . $unicode;
-        }
-        else {
-            $unicode = $unicode . " " x ( $avail_width - $colwidth );
-        }
-    }
-    return $unicode;
-}
 
 
 1;
@@ -465,7 +503,7 @@ Term::TablePrint - Print a table to the terminal.
 
 =head1 VERSION
 
-Version 0.003
+Version 0.004
 
 =cut
 
@@ -490,7 +528,7 @@ Version 0.003
 
 =head1 DESCRIPTION
 
-C<print_table> prints a table to C<STDOUT> or to C<STDERR> if C<STDOUT> is redirected.
+C<print_table> prints a table to STDOUT or to STDERR if STDOUT is redirected.
 
 C<print_table> provides a cursor which highlights the row on which the cursor is located.
 
@@ -505,7 +543,7 @@ one.
 
 If the terminal is too narrow to print the table, the columns are adjusted to the available width automatically.
 
-If the option "table_expand" is enabled and the highlighted row is selected, each column of that row is output in its
+If the option C<table_expand> is enabled and the highlighted row is selected, each column of that row is output in its
 one line preceded by the column name. This might be useful if the columns were cut due to the too low terminal width.
 
 To get a proper output, C<print_table> uses the C<columns> method from L<Unicode::GCString> to calculate the string
@@ -524,7 +562,7 @@ In addition, characters of the Unicode property "Other" are removed:
 The elements in a column are right-justified if one or more elements of that column do not look like a number, else they
 are left-justified.
 
-=head1 METHODES
+=head1 METHODS
 
 =head2 new
 
@@ -553,11 +591,7 @@ Prints the table passed with the first argument.
 
     print_table( $array_ref, [ \%options ] );
 
-The first argument must be a reference to an array of arrays. The first array of the arrays holds the column names. The
-following arrays are the table rows where the elements of these arrays are the field values.
-
-As a second and optional argument can be passed a reference to a hash which holds the options as pairs of
-"option-name" and "option-value".
+The subroutine C<print_table> takes the same arguments as the method L</print_table>.
 
 =head1 USAGE
 
@@ -580,27 +614,42 @@ row of the table.
 
 =item *
 
-the C<Enter/Return> key to close the table or to print the highlighted row if C<table_expand> is enabled.
+the C<Return> key to close the table or to print the highlighted row if C<table_expand> is enabled.
 
 =back
 
-With the option "table_expand" disabled:
+With the option C<table_expand> disabled:
 
-- Pressing C<Enter/Return> jumps to the head of the table.
+- if the cursor is on the table head pressing C<Return> closes the table.
 
-- Selecting the head of the table closes the table.
+- if the cursor is not on the table head the cursor jumps to the table head if C<Return> is pressed.
 
-With the option "table_expand" enabled:
+With the option C<table_expand> enabled:
 
-- If one selects a row twice in succession, the pointer jumps to the head of the table.
+- selecting the head of the table closes the table.
 
-- Selecting the head of the table closes the table.
+- if a row is selected, each column of that row is output in its one line preceded by the column name. Another C<Return>
+closes this output and goes back to the table output.
 
-- If the width of the window is changed the user can rewrite the screen by choosing a row.
+- if a row is selected twice in succession, the pointer jumps to the head of the table.
+
+- if the width of the window is changed the user can rewrite the screen by choosing a row.
 
 =head2 OPTIONS
 
 Defaults may change in a future release.
+
+=head3 header_row
+
+If disabled (set to 0) a header row is added: the columns are numbered starting with 1.
+
+Default: 1
+
+=head3 choose_columns
+
+If enabled the user can choose which columns to print.
+
+Default: 0
 
 =head3 tab_width
 
@@ -610,8 +659,8 @@ Default: 2
 
 =head3 min_col_width
 
-Set the width the columns should have at least when printed. The columns which are below or equal the C<min_col_width> are
-only trimmed if it is still required to lower the row width despite all columns have trimmed to C<min_col_width>.
+The columns which a width below or equal C<min_col_width> are only trimmed if it is still required to lower the row
+width despite all columns have trimmed to C<min_col_width>.
 
 Default: 30
 
@@ -625,7 +674,9 @@ Default: "" (empty string)
 
 Set the maximum number of printed table rows.
 
-To disable the automatic limit set C<max rows> to 0.
+To disable the automatic limit set C<max_rows> to 0.
+
+If the number of table rows is equal or higher than I<max_rows> the last row of the output says "REACHED LIMIT".
 
 Default: 50_000
 
@@ -638,13 +689,13 @@ Default: 20_000
 
 =head3 table_expand
 
-C<table_expand> set to 1 enables printing the chosen table row by pressing the C<ENTER> key.
+C<table_expand> set to 1 enables printing the chosen table row by pressing the C<Return> key.
 
 Default: 1
 
 =head3 mouse
 
-Set the C<mouse> mode (see option "mouse" in L<Term::Choose/OPTIONS>).
+Set the C<mouse> mode (see option C<mouse> in L<Term::Choose/OPTIONS>).
 
 Default: 0
 
@@ -658,6 +709,40 @@ Printing arbitrary binary data could break the output.
 
 Default: 0
 
+=head1 ERROR HANDLING
+
+=head2 Carp
+
+C<print_table> warns
+
+=over
+
+=item
+
+if an unknown option name is passed.
+
+=back
+
+=head2 Croak
+
+C<print_table> dies
+
+=over
+
+=item
+
+with an invalid number of arguments.
+
+=item
+
+if an invalid argument is passed.
+
+=item
+
+if an invalid option value is passed.
+
+=back
+
 =head1 REQUIREMENTS
 
 =head2 Perl version
@@ -670,7 +755,7 @@ C<print_table> expects decoded strings.
 
 =head2 encoding layer for STDOUT
 
-For a correct output it is required to set an encoding layer for STDOUT matching the terminal's character set.
+For a correct output it is required to set an encoding layer for C<STDOUT> matching the terminal's character set.
 
 =head2 Monospaced font
 
