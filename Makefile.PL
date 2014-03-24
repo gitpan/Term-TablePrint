@@ -8,8 +8,19 @@ WriteMakefile(
     PL_FILES         => {},
     MIN_PERL_VERSION => '5.010001',
     LICENSE          => 'perl',
+    META_MERGE => {
+        'meta-spec' => { version => 2 },
+        resources   => {
+            repository => {
+              type => 'git',
+              web  => 'https://github.com/kuerbis/Term-TablePrint',
+              url  => 'https://github.com/kuerbis/Term-TablePrint.git',
+            },
+        },
+    },
     AUTHOR           => 'Matthaeus Kiem <cuer2s@gmail.com>',
     NAME             => 'Term::TablePrint',
+    ABSTRACT_FROM    => 'lib/Term/TablePrint.pm',
     VERSION_FROM     => 'lib/Term/TablePrint.pm',
     EXE_FILES        => [],
     BUILD_REQUIRES   => {
@@ -27,6 +38,11 @@ WriteMakefile(
         'Term::ProgressBar'    => 0,
         'Text::LineFold'       => 0,
         'Unicode::GCString'    => 0,
+    },
+    dist  => {
+        COMPRESS => 'gzip',
+        SUFFIX   => '.gz',
+        TARFLAGS => '--format=gnu -cvf',
     },
     clean => {
         FILES => 'Term-TablePrint-*',

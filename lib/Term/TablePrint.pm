@@ -4,7 +4,7 @@ use warnings;
 use strict;
 use 5.10.1;
 
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 use Exporter 'import';
 our @EXPORT_OK = qw( print_table );
 
@@ -48,7 +48,7 @@ sub __validate_options {
         table_expand    => '[ 0 1 ]',
         binary_filter   => '[ 0 1 ]',
         header_row      => '[ 0 1 ]',
-        choose_columns  => '[ 0 1 2 ]', # ###
+        choose_columns  => '[ 0 1 2 ]',
         mouse           => '[ 0 1 2 3 4 ]',
         binary_string   => '',
         undef           => '',
@@ -94,7 +94,7 @@ sub __set_defaults {
 }
 
 
-sub __choose_columns {
+sub __choose_columns_with_order {
     my ( $self, $avail_cols ) = @_;
     my $col_idxs = [];
     my $ok = '-ok-';
@@ -177,8 +177,8 @@ sub print_table {
         my @copy = ();
         if ( $self->{choose_columns}  ) {
             my $col_idxs;
-            $col_idxs = $self->__choose_columns_simple( $table_ref->[0] ) if $self->{choose_columns} == 1;
-            $col_idxs = $self->__choose_columns( $table_ref->[0] )        if $self->{choose_columns} == 2;
+            $col_idxs = $self->__choose_columns_simple( $table_ref->[0] )     if $self->{choose_columns} == 1;
+            $col_idxs = $self->__choose_columns_with_order( $table_ref->[0] ) if $self->{choose_columns} == 2;
             return if ! defined $col_idxs;
             if ( @$col_idxs ) {
                 @copy = map { [ @{$table_ref->[$_]}[@$col_idxs] ] } 0 .. $last_row_idx;
@@ -219,11 +219,15 @@ sub __inner_print_tbl {
     my ( $list, $len ) = $self->__trunk_col_to_avail_width( $a_ref, $width_cols );
     if ( $self->{max_rows} && @$list - 1 >= $self->{max_rows} ) {
         my $reached_limit = 'REACHED LIMIT "MAX_ROWS": ' . insert_sep( $self->{max_rows}, $self->{thsd_sep} );
-        my $gcs = Unicode::GCString->new( $reached_limit );
-        if ( $gcs->columns > $term_width ) {
-            $reached_limit = unicode_sprintf( 'REACHED LIMIT', $term_width, 0 );
+        my $gcs1 = Unicode::GCString->new( $reached_limit );
+        if ( $gcs1->columns > $len ) {
+            $reached_limit = 'REACHED LIMIT';
+            my $gcs2 = Unicode::GCString->new( $reached_limit );
+            if ( $gcs2->columns > $len ) {
+                $reached_limit = '=LIMIT=';
+            }
         }
-        push @$list, $reached_limit;
+        push @$list, unicode_sprintf( $reached_limit, $len, 0 );
     }
     my $old_row = 0;
     my ( $width ) = term_size();
@@ -503,7 +507,7 @@ Term::TablePrint - Print a table to the terminal.
 
 =head1 VERSION
 
-Version 0.004
+Version 0.005
 
 =cut
 
@@ -528,11 +532,11 @@ Version 0.004
 
 =head1 DESCRIPTION
 
-C<print_table> prints a table to STDOUT or to STDERR if STDOUT is redirected.
+C<print_table> prints a table to C<STDOUT> or to C<STDERR> if C<STDOUT> is redirected.
 
 C<print_table> provides a cursor which highlights the row on which the cursor is located.
 
-The user can scroll through the table with the cursor up/down keys - see L<USAGE>.
+The user can scroll through the table with the different cursor keys - see L</USAGE>.
 
 If the table has more rows than the terminal, the table is divided up on as many pages as needed automatically.
 
@@ -566,8 +570,8 @@ are left-justified.
 
 =head2 new
 
-Returns an object. As an argument it can be passed  a reference to a hash which holds the options as pairs of
-"option-name" and "option-value".
+The C<new> method returns a C<Term::TablePrint> object. As an argument it can be passed  a reference to a hash which
+holds the options: the option name is a hash key - the option value is the value that hash key.
 
     my $tp = Term::TablePrint->new( [ \%options ] );
 
@@ -577,11 +581,11 @@ Prints the table passed with the first argument.
 
     $tp->print_table( $array_ref, [ \%options ] );
 
-The first argument must be a reference to an array of arrays. The first array of the arrays holds the column names. The
+The first argument is a reference to an array of arrays. The first array of the arrays holds the column names. The
 following arrays are the table rows where the elements of these arrays are the field values.
 
-As a second and optional argument can be passed a reference to a hash which holds the options as pairs of
-"option-name" and "option-value".
+As a second and optional argument can be passed a reference to a hash which holds the options: the option name is a hash
+key - the option value is the value that hash key.
 
 =head1 SUBROUTINES
 
@@ -601,7 +605,7 @@ The subroutine C<print_table> takes the same arguments as the method L</print_ta
 
 =item *
 
-the C<ArrowDown> key (or the C<j> key) to move down and  C<ArrowUp> key (or the C<k> key) to move up.
+the C<ArrowDown> key (or the C<j> key) to move down and  the C<ArrowUp> key (or the C<k> key) to move up.
 
 =item *
 
@@ -647,7 +651,11 @@ Default: 1
 
 =head3 choose_columns
 
-If enabled the user can choose which columns to print.
+If set to 1 the user can choose which columns to print. The columns can be marked with the C<SpaceBar>. The list of
+marked columns including the highlighted column are printed as soon as C<Return> is pressed.
+
+If I<choose_columns> is set to 2 it is possible to change the order of the columns. Columns can be added (with
+the C<SpaceBar> and the C<Return> key) until the users confirms with the I<-ok-> menu entry.
 
 Default: 0
 
@@ -659,7 +667,7 @@ Default: 2
 
 =head3 min_col_width
 
-The columns which a width below or equal C<min_col_width> are only trimmed if it is still required to lower the row
+The columns with a width below or equal C<min_col_width> are only trimmed if it is still required to lower the row
 width despite all columns have trimmed to C<min_col_width>.
 
 Default: 30
@@ -676,7 +684,8 @@ Set the maximum number of printed table rows.
 
 To disable the automatic limit set C<max_rows> to 0.
 
-If the number of table rows is equal or higher than I<max_rows> the last row of the output says "REACHED LIMIT".
+If the number of table rows is equal to or higher than I<max_rows> the last row of the output says "REACHED LIMIT" or
+"=LIMIT=' if "REACHED LIMIT" doesn't fit in the row.
 
 Default: 50_000
 

@@ -1,10 +1,10 @@
 {
-   "abstract" : "unknown",
+   "abstract" : "Print a table to the terminal.",
    "author" : [
       "Matthaeus Kiem <cuer2s@gmail.com>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "ExtUtils::MakeMaker version 6.88, CPAN::Meta::Converter version 2.120921",
+   "generated_by" : "ExtUtils::MakeMaker version 6.88, CPAN::Meta::Converter version 2.140640",
    "license" : [
       "perl_5"
    ],
@@ -48,5 +48,12 @@
       }
    },
    "release_status" : "stable",
-   "version" : "0.004"
+   "resources" : {
+      "repository" : {
+         "type" : "git",
+         "url" : "https://github.com/kuerbis/Term-TablePrint.git",
+         "web" : "https://github.com/kuerbis/Term-TablePrint"
+      }
+   },
+   "version" : "0.005"
 }
