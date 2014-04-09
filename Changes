@@ -1,6 +1,9 @@
 Revision history for Term::TablePrint
 
 
+0.006   2014-04-09
+        - Update documentation.
+
 0.005   2014-03-24
         - Bugfix in "max_rows".
         - Added the second "choose_columns" method to the documentation.

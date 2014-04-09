@@ -4,7 +4,7 @@ use warnings;
 use strict;
 use 5.10.1;
 
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 use Exporter 'import';
 our @EXPORT_OK = qw( print_table );
 
@@ -100,11 +100,12 @@ sub __choose_columns_with_order {
     my $ok = '-ok-';
     my @pre = ( $ok );
     my $init_prompt = 'Columns: ';
-    my $s_tab = length $init_prompt;
+    my $gcs = Unicode::GCString->new( $init_prompt );
+    my $s_tab = $gcs->columns();
 
     while ( 1 ) {
-        my @choosen_cols = @$col_idxs ? map( $avail_cols->[$_], @$col_idxs ) : '*';
-        my $prompt = $init_prompt . join ', ', @choosen_cols;
+        my @chosen_cols = @$col_idxs ? map( $avail_cols->[$_], @$col_idxs ) : '*';
+        my $prompt = $init_prompt . join ', ', @chosen_cols;
         my $choices = [ @pre, @$avail_cols ];
         # Choose
         my @idx = choose(
@@ -507,7 +508,7 @@ Term::TablePrint - Print a table to the terminal.
 
 =head1 VERSION
 
-Version 0.005
+Version 0.006
 
 =cut
 
@@ -534,7 +535,7 @@ Version 0.005
 
 C<print_table> prints a table to C<STDOUT> or to C<STDERR> if C<STDOUT> is redirected.
 
-C<print_table> provides a cursor which highlights the row on which the cursor is located.
+C<print_table> provides a cursor which highlights the row on which it is located.
 
 The user can scroll through the table with the different cursor keys - see L</USAGE>.
 
@@ -547,21 +548,31 @@ one.
 
 If the terminal is too narrow to print the table, the columns are adjusted to the available width automatically.
 
-If the option C<table_expand> is enabled and the highlighted row is selected, each column of that row is output in its
-one line preceded by the column name. This might be useful if the columns were cut due to the too low terminal width.
+If the option I<table_expand> is enabled and a row is selected with the C<Return> key, each column of that row is output
+in its one line preceded by the column name. This might be useful if the columns were cut due to the too low terminal
+width.
 
-To get a proper output, C<print_table> uses the C<columns> method from L<Unicode::GCString> to calculate the string
+To get a proper output C<print_table> uses the C<columns> method from L<Unicode::GCString> to calculate the string
 length.
 
-The array elements are processed with the following substitutions:
+The following modifications are made (at a copy of the original data) before the output.
+
+Leading and trailing spaces are removed from the array elements
 
     s/^\p{Space}+//;
     s/\p{Space}+\z//;
+
+and spaces are squashed to a single white-space.
+
     s/\p{Space}+/ /g;
 
-In addition, characters of the Unicode property "Other" are removed:
+In addition, characters of the Unicode property C<Other> are removed.
 
     s/\p{C}//g;
+
+In C<Term::TablePrint> the utf8 warnings are disabled.
+
+    no warnings 'utf8';
 
 The elements in a column are right-justified if one or more elements of that column do not look like a number, else they
 are left-justified.
@@ -570,8 +581,8 @@ are left-justified.
 
 =head2 new
 
-The C<new> method returns a C<Term::TablePrint> object. As an argument it can be passed  a reference to a hash which
-holds the options: the option name is a hash key - the option value is the value that hash key.
+The C<new> method returns a C<Term::TablePrint> object. As an argument it can be passed a reference to a hash which
+holds the options - the available options are listed in L</OPTIONS>.
 
     my $tp = Term::TablePrint->new( [ \%options ] );
 
@@ -581,11 +592,11 @@ Prints the table passed with the first argument.
 
     $tp->print_table( $array_ref, [ \%options ] );
 
-The first argument is a reference to an array of arrays. The first array of the arrays holds the column names. The
-following arrays are the table rows where the elements of these arrays are the field values.
+The first argument is a reference to an array of arrays. The first array of these arrays holds the column names. The
+following arrays are the table rows where the elements are the field values.
 
-As a second and optional argument can be passed a reference to a hash which holds the options: the option name is a hash
-key - the option value is the value that hash key.
+As a second and optional argument a hash reference can be passed which holds the options - the available options are
+listed in L</OPTIONS>.
 
 =head1 SUBROUTINES
 
@@ -618,17 +629,17 @@ row of the table.
 
 =item *
 
-the C<Return> key to close the table or to print the highlighted row if C<table_expand> is enabled.
+the C<Return> key to close the table or to print the highlighted row if I<table_expand> is enabled.
 
 =back
 
-With the option C<table_expand> disabled:
+With the option I<table_expand> disabled:
 
-- if the cursor is on the table head pressing C<Return> closes the table.
+- if the cursor is on the table head C<Return> closes the table.
 
 - if the cursor is not on the table head the cursor jumps to the table head if C<Return> is pressed.
 
-With the option C<table_expand> enabled:
+With the option I<table_expand> enabled:
 
 - selecting the head of the table closes the table.
 
@@ -667,8 +678,8 @@ Default: 2
 
 =head3 min_col_width
 
-The columns with a width below or equal C<min_col_width> are only trimmed if it is still required to lower the row
-width despite all columns have trimmed to C<min_col_width>.
+The columns with a width below or equal I<min_col_width> are only trimmed if it is still required to lower the row
+width despite all columns have been trimmed to I<min_col_width>.
 
 Default: 30
 
@@ -682,7 +693,7 @@ Default: "" (empty string)
 
 Set the maximum number of printed table rows.
 
-To disable the automatic limit set C<max_rows> to 0.
+To disable the automatic limit set I<max_rows> to 0.
 
 If the number of table rows is equal to or higher than I<max_rows> the last row of the output says "REACHED LIMIT" or
 "=LIMIT=' if "REACHED LIMIT" doesn't fit in the row.
@@ -698,13 +709,13 @@ Default: 20_000
 
 =head3 table_expand
 
-C<table_expand> set to 1 enables printing the chosen table row by pressing the C<Return> key.
+I<table_expand> set to 1 enables printing the chosen table row by pressing the C<Return> key.
 
 Default: 1
 
 =head3 mouse
 
-Set the C<mouse> mode (see option C<mouse> in L<Term::Choose/OPTIONS>).
+Set the I<mouse> mode (see option C<mouse> in L<Term::Choose/OPTIONS>).
 
 Default: 0
 
@@ -762,7 +773,7 @@ Requires Perl version 5.10.1 or greater.
 
 C<print_table> expects decoded strings.
 
-=head2 encoding layer for STDOUT
+=head2 Encoding layer for STDOUT
 
 For a correct output it is required to set an encoding layer for C<STDOUT> matching the terminal's character set.
 
