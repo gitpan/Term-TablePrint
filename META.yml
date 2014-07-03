@@ -32,4 +32,4 @@ requires:
   warnings: '0'
 resources:
   repository: https://github.com/kuerbis/Term-TablePrint.git
-version: '0.013'
+version: '0.014'
