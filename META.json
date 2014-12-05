@@ -4,7 +4,7 @@
       "Matthaeus Kiem <cuer2s@gmail.com>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "ExtUtils::MakeMaker version 6.98, CPAN::Meta::Converter version 2.142060",
+   "generated_by" : "ExtUtils::MakeMaker version 7.02, CPAN::Meta::Converter version 2.143240",
    "license" : [
       "perl_5"
    ],
@@ -37,7 +37,7 @@
             "List::Util" : "0",
             "Scalar::Util" : "0",
             "Term::Choose" : "0",
-            "Term::Choose::Util" : "0.016",
+            "Term::Choose::Util" : "0.018",
             "Term::ProgressBar" : "0",
             "Text::LineFold" : "0",
             "Unicode::GCString" : "0",
@@ -55,5 +55,5 @@
          "web" : "https://github.com/kuerbis/Term-TablePrint"
       }
    },
-   "version" : "0.019"
+   "version" : "0.020"
 }
